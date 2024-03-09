@@ -1,55 +1,76 @@
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
+
+client_id = "c467385725ed4a4f86a682ed1a096d44"
+client_secret = "5e337668008a4319b6a333cfcfc7e573"
+
+sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(client_id, client_secret))
+
+# Aumenta el límite para obtener más resultados
+results = sp.search(q='Oasis', limit=20)
+
+'''
+for idx, track in enumerate(results['tracks']['items']):
+    # Verifica que el artista principal sea "Oasis" antes de imprimir la información
+    if 'Oasis' in [artist['name'] for artist in track['artists'] if artist['type'] == 'artist']:
+        # Extrae la información requerida
+        name = track['name']
+        artist = track['artists'][0]['name']
+        album = track['album']['name']
+        release_year = track['album']['release_date'][:4]  # Solo obtenemos el año de lanzamiento
+        popularity = track['popularity']
+
+        # Imprime la información
+        print(f"{idx + 1}. Nombre: {name}")
+        print(f"   Artista: {artist}")
+        print(f"   Álbum: {album}")
+        print(f"   Año de lanzamiento: {release_year}")
+        print(f"   Popularidad: {popularity}")
+        print("-" * 30)
+   
+''' 
 import psycopg2
-import requests
 
-# Aqui colocamos las credenciales de la base de datos Redshift
-dbname = 'data-engineer-database'
-user = 'tomi_ardiani_coderhouse'
-password = '4lsmFL6p85'
-host = 'data-engineer-cluster.cyhh5bfevlmn.us-east-1.redshift.amazonaws.com'
-port = '5439'
+# Configuración de Redshift
+redshift_url = "data-engineer-cluster.cyhh5bfevlmn.us-east-1.redshift.amazonaws.com"
+redshift_db = "data-engineer-database"
+redshift_user = "tomi_ardiani_coderhouse"
 
-# URL de la API donde consultamos los datos
-url = "https://api.covidtracking.com/v1/states/current.json"
+# Leer la contraseña de Redshift desde un archivo
+redshift_pwd_file_path = "C:/Users/Tomas/Desktop/Cursos/Curso Data Engineering/Primer entregable/pwd_redshift.txt"
+with open(redshift_pwd_file_path, 'r') as f:
+    redshift_pwd = f.read()
 
-# Aqui vamos a hacer la solicitud a la API
-response = requests.get(url)
-
-# Verificar el estado de la respuesta
-if response.status_code == 200:
-    data = response.json()
-    print(data)
-    
-    # Conexión a la base de datos Redshift si la respuesta es exitosa
+try:
+    # Crear conexión a Redshift
     conn = psycopg2.connect(
-        dbname=dbname,
-        user=user,
-        password=password,
-        host=host,
-        port=port
+        host=redshift_url,
+        dbname=redshift_db,
+        user=redshift_user,
+        password=redshift_pwd,
+        port='5439'
     )
-
-    # Crear el cursor
-    cursor = conn.cursor()
-
-    # Lista de columnas de la respuesta
-    columns = ['date', 'state', 'positive', 'probableCases', 'negative', 'pending', 'totalTestResults', 'hospitalizedCurrently', 'hospitalizedCumulative', 'inIcuCurrently', 'inIcuCumulative', 'onVentilatorCurrently', 'onVentilatorCumulative', 'recovered', 'lastUpdateEt', 'dateModified', 'checkTimeEt', 'death', 'hospitalized', 'hospitalizedDischarged', 'dateChecked', 'totalTestsViral', 'positiveTestsViral', 'negativeTestsViral', 'positiveCasesViral', 'deathConfirmed', 'deathProbable', 'totalTestEncountersViral', 'totalTestsPeopleViral', 'totalTestsAntibody', 'positiveTestsAntibody', 'negativeTestsAntibody', 'totalTestsPeopleAntibody', 'positiveTestsPeopleAntibody', 'negativeTestsPeopleAntibody', 'totalTestsPeopleAntigen', 'positiveTestsPeopleAntigen', 'totalTestsAntigen', 'positiveTestsAntigen', 'fips', 'positiveIncrease', 'negativeIncrease', 'total', 'totalTestResultsIncrease', 'posNeg', 'dataQualityGrade', 'deathIncrease', 'hospitalizedIncrease', 'hash', 'commercialScore', 'negativeRegularScore', 'negativeScore', 'positiveScore', 'score', 'grade']
-
-    # Crear una tabla para almacenar los datos de COVID-19 si previamente no existia una tabla en la base de datos que se llamara "datos_covid"
-    create_table_query = f"CREATE TABLE IF NOT EXISTS datos_covid ({', '.join([f'{column} VARCHAR(255)' for column in columns])}, probableCases VARCHAR(255), probablecases VARCHAR(255));"
-
-
-    cursor.execute(create_table_query)
+    print("Conectado a Redshift con éxito!")
+    
+except Exception as e:
+    print("No es posible conectar a Redshift")
+    print(e)
+    
+    
+#Crear la tabla si no existe
+with conn.cursor() as cur:
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS tomi_ardiani_coderhouse.canciones
+        (
+	    id VARCHAR(50) primary key, 
+	    artista VARCHAR(255),  
+	    cancion VARCHAR(255),    
+	    album VARCHAR(100),   
+	    popularidad INTEGER, 
+	    fecha_lanzamiento date,   
+	    duracion_ms INTEGER,   
+	    album_img VARCHAR(300) 
+        )
+    """)
     conn.commit()
-
-    # Insertar los datos en la tabla
-    for item in data:
-        insert_query = f"INSERT INTO datos_covid ({', '.join(columns)}) VALUES ({', '.join(['%s']*len(columns))});"
-        cursor.execute(insert_query, tuple(item[column] for column in columns))
-
-    conn.commit()
-
-    # Cerrar la conexión
-    cursor.close()
-    conn.close()
-else:
-    print("Error al obtener los datos de la API")
+    
