@@ -1,76 +1,83 @@
+import os
+from dotenv import load_dotenv
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
+import pandas as pd
+import psycopg2
+from sqlalchemy import create_engine
 
-client_id = "c467385725ed4a4f86a682ed1a096d44"
-client_secret = "5e337668008a4319b6a333cfcfc7e573"
+# Cargar variables de entorno desde el archivo .env
+load_dotenv()
 
-sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(client_id, client_secret))
+# Obtener las variables de entorno
+spotify_client_id = os.getenv("SPOTIFY_CLIENT_ID")
+spotify_client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+redshift_url = os.getenv("REDSHIFT_URL")
+redshift_db = os.getenv("REDSHIFT_DB")
+redshift_user = os.getenv("REDSHIFT_USER")
+redshift_password = os.getenv("REDSHIFT_PASSWORD")
 
-# Aumenta el límite para obtener más resultados
+# Inicializar el cliente de Spotify
+sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(spotify_client_id, spotify_client_secret))
+
+# Obtener resultados de búsqueda de Spotify
 results = sp.search(q='Oasis', limit=20)
 
-'''
-for idx, track in enumerate(results['tracks']['items']):
-    # Verifica que el artista principal sea "Oasis" antes de imprimir la información
-    if 'Oasis' in [artist['name'] for artist in track['artists'] if artist['type'] == 'artist']:
-        # Extrae la información requerida
-        name = track['name']
-        artist = track['artists'][0]['name']
-        album = track['album']['name']
-        release_year = track['album']['release_date'][:4]  # Solo obtenemos el año de lanzamiento
-        popularity = track['popularity']
+# Construir un diccionario con los datos de las canciones
+songs_data = {
+    'id': [],
+    'artista': [],
+    'cancion': [],
+    'album': [],
+    'popularidad': [],
+    'fecha_lanzamiento': [],
+    'duracion_ms': [],
+    'album_img': []
+}
 
-        # Imprime la información
-        print(f"{idx + 1}. Nombre: {name}")
-        print(f"   Artista: {artist}")
-        print(f"   Álbum: {album}")
-        print(f"   Año de lanzamiento: {release_year}")
-        print(f"   Popularidad: {popularity}")
-        print("-" * 30)
-   
-''' 
-import psycopg2
+for track in results['tracks']['items']:
+    # Extraer información de la canción
+    songs_data['id'].append(track['id'])
+    songs_data['artista'].append(track['artists'][0]['name'])
+    songs_data['cancion'].append(track['name'])
+    songs_data['album'].append(track['album']['name'])
+    songs_data['popularidad'].append(track['popularity'])
+    songs_data['fecha_lanzamiento'].append(track['album']['release_date'])
+    songs_data['duracion_ms'].append(track['duration_ms'])
+    songs_data['album_img'].append(track['album']['images'][0]['url'])
 
-# Configuración de Redshift
-redshift_url = "data-engineer-cluster.cyhh5bfevlmn.us-east-1.redshift.amazonaws.com"
-redshift_db = "data-engineer-database"
-redshift_user = "tomi_ardiani_coderhouse"
+# Convertir el diccionario en un DataFrame
+songs_df = pd.DataFrame(songs_data)
 
-# Leer la contraseña de Redshift desde un archivo
-redshift_pwd_file_path = "C:/Users/Tomas/Desktop/Cursos/Curso Data Engineering/Primer entregable/pwd_redshift.txt"
-with open(redshift_pwd_file_path, 'r') as f:
-    redshift_pwd = f.read()
+# Definir clave primaria compuesta
+songs_df['id_artista'] = songs_df['id'] + '_' + songs_df['artista']
 
+# Eliminar columnas no necesarias
+songs_df.drop(columns=['id', 'artista'], inplace=True)
+
+# Crear conexión a Redshift y cargar datos
 try:
     # Crear conexión a Redshift
     conn = psycopg2.connect(
         host=redshift_url,
         dbname=redshift_db,
         user=redshift_user,
-        password=redshift_pwd,
-        port='5439'
+        password=redshift_password,
+        port=5439
     )
     print("Conectado a Redshift con éxito!")
-    
+
+    # Crear motor SQLAlchemy para la conexión a Redshift
+    engine = create_engine(f'postgresql+psycopg2://{redshift_user}:{redshift_password}@{redshift_url}/{redshift_db}')
+
+    # Cargar datos en Redshift
+    songs_df.to_sql('canciones', engine, if_exists='replace', index=False)
+    print("Datos cargados en Redshift con éxito!")
+
 except Exception as e:
-    print("No es posible conectar a Redshift")
+    print("Error al conectar o cargar datos en Redshift:")
     print(e)
-    
-    
-#Crear la tabla si no existe
-with conn.cursor() as cur:
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS tomi_ardiani_coderhouse.canciones
-        (
-	    id VARCHAR(50) primary key, 
-	    artista VARCHAR(255),  
-	    cancion VARCHAR(255),    
-	    album VARCHAR(100),   
-	    popularidad INTEGER, 
-	    fecha_lanzamiento date,   
-	    duracion_ms INTEGER,   
-	    album_img VARCHAR(300) 
-        )
-    """)
-    conn.commit()
-    
+finally:
+    # Cerrar la conexión
+    if conn is not None:
+        conn.close()
