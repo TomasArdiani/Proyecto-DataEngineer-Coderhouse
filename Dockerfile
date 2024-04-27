@@ -1,5 +1,5 @@
-# Estoy usando una imagen oficial de Python como imagen base
-FROM python:3.9-slim
+# Usa la imagen oficial de Apache Airflow como base
+FROM apache/airflow:2.2.3
 
 # Establece el directorio de trabajo en el contenedor
 WORKDIR /usr/src/app
@@ -11,7 +11,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copia el script al contenedor en /usr/src/app
-COPY primer_entregable.py .
+COPY Primer_entregable.py .
+
+# Define las variables de entorno para Airflow
+ENV AIRFLOW_HOME=/usr/local/airflow
 
 # Ejecuta el script cuando se lance el contenedor
-CMD ["python", "./primer_entregable.py"]
+CMD ["python", "./Primer_entregable.py"]
+
